@@ -939,3 +939,69 @@ func TestCheckReturnTypeOriginFn(t *testing.T) {
 		d1.Kind,
 	)
 }
+
+func TestNonVariableAssetMismatch(t *testing.T) {
+	input := `
+	send [EUR/2 100] (
+		source = max [USD/2 1] from @s
+		destination = @d
+	)
+	`
+
+	program := parser.Parse(input).Value
+
+	diagnostics := analysis.Check(program).Diagnostics
+	assert.Len(t, diagnostics, 1)
+
+	d1 := diagnostics[0]
+	assert.Equal(t,
+		&analysis.AssetMismatch{
+			Expected: "EUR/2",
+			Got:      "USD/2",
+		},
+		d1.Kind,
+	)
+	assert.Equal(t,
+		RangeOfIndexed(input, "USD/2", 0),
+		d1.Range,
+	)
+}
+
+func TestNoVariableMismatchInDifferentStatements(t *testing.T) {
+	input := `
+send [EUR/2 100] (
+	source = @s
+	destination = @d
+)
+
+send [USD/2 100] (
+	source = @s
+	destination = @d
+)
+	`
+
+	program := parser.Parse(input).Value
+
+	diagnostics := analysis.Check(program).Diagnostics
+	assert.Len(t, diagnostics, 0)
+
+}
+
+func TestFixedVariableInSend(t *testing.T) {
+	input := `
+vars {
+  monetary $m1
+}
+
+send $m1 (
+  source = max [COIN 1] from @s
+  destination = @d
+)
+
+	`
+
+	program := parser.Parse(input).Value
+
+	diagnostics := analysis.Check(program).Diagnostics
+	assert.Len(t, diagnostics, 1)
+}

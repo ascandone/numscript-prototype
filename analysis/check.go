@@ -77,7 +77,16 @@ type Diagnostic struct {
 	Kind  DiagnosticKind
 }
 
+type assetCtx interface{ assetCtx() }
+type concreteAsset struct{ Value string }
+type variableAsset struct{ Name string }
+
+func (concreteAsset) assetCtx() {}
+func (variableAsset) assetCtx() {}
+
 type CheckResult struct {
+	sendingAsset assetCtx
+
 	declaredVars     map[string]parser.VarDeclaration
 	unusedVars       map[string]parser.Range
 	varResolution    map[*parser.VariableLiteral]parser.VarDeclaration
@@ -122,6 +131,7 @@ func Check(program parser.Program) CheckResult {
 		}
 	}
 	for _, statement := range program.Statements {
+		res.sendingAsset = nil
 		switch statement := statement.(type) {
 		case *parser.SendStatement:
 			res.checkSentValue(statement.SentValue)
@@ -287,6 +297,22 @@ func (res *CheckResult) checkLiteral(lit parser.Literal, requiredType string) {
 	case *parser.RatioLiteral:
 		res.assertHasType(lit, requiredType, TypePortion)
 	case *parser.AssetLiteral:
+		switch sendingAsset := res.sendingAsset.(type) {
+		case nil:
+			res.sendingAsset = concreteAsset{Value: lit.Asset}
+		case concreteAsset:
+			if sendingAsset.Value != lit.Asset {
+				res.Diagnostics = append(res.Diagnostics, Diagnostic{
+					Kind: &AssetMismatch{
+						Expected: sendingAsset.Value,
+						Got:      lit.Asset,
+					},
+					Range: lit.Range,
+				})
+			}
+		case variableAsset:
+		}
+
 		res.assertHasType(lit, requiredType, TypeAsset)
 	case *parser.NumberLiteral:
 		res.assertHasType(lit, requiredType, TypeNumber)
